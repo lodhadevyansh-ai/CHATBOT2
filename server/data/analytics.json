@@ -1,0 +1,143 @@
+{
+  "totalMessages": 47,
+  "guestCount": 11,
+  "dailyStats": {
+    "2026-08-13": {
+      "messages": 15,
+      "activeUsers": [
+        "default_user",
+        "ba96f1be-8c56-44d6-ac08-f6d81f1b97f0"
+      ],
+      "newSignups": 0,
+      "commands": {
+        "/web": 2
+      },
+      "models": {
+        "auto": 15
+      }
+    },
+    "2026-08-15": {
+      "messages": 16,
+      "activeUsers": [
+        "ba96f1be-8c56-44d6-ac08-f6d81f1b97f0"
+      ],
+      "newSignups": 0,
+      "commands": {},
+      "models": {
+        "auto": 16
+      }
+    },
+    "2026-08-16": {
+      "messages": 10,
+      "activeUsers": [
+        "system",
+        "0fce24de-8643-499a-af6b-eea349a3a343",
+        "d81fb513-231b-4965-b8c5-9ba076c6d68b"
+      ],
+      "newSignups": 2,
+      "commands": {
+        "/code": 3
+      },
+      "models": {
+        "auto": 10
+      }
+    },
+    "2026-08-18": {
+      "messages": 2,
+      "activeUsers": [
+        "ba96f1be-8c56-44d6-ac08-f6d81f1b97f0"
+      ],
+      "newSignups": 0,
+      "commands": {},
+      "models": {
+        "auto": 2
+      }
+    },
+    "2026-08-22": {
+      "messages": 1,
+      "activeUsers": [
+        "d81fb513-231b-4965-b8c5-9ba076c6d68b"
+      ],
+      "newSignups": 0,
+      "commands": {},
+      "models": {
+        "auto": 1
+      }
+    },
+    "2026-08-25": {
+      "messages": 1,
+      "activeUsers": [
+        "ba96f1be-8c56-44d6-ac08-f6d81f1b97f0"
+      ],
+      "newSignups": 0,
+      "commands": {},
+      "models": {
+        "auto": 1
+      }
+    },
+    "2026-08-26": {
+      "messages": 2,
+      "activeUsers": [
+        "43391d4c-93f0-45c9-88bd-d63bfcf652e0"
+      ],
+      "newSignups": 5,
+      "commands": {},
+      "models": {
+        "auto": 2
+      }
+    }
+  },
+  "commandUsage": {
+    "/image": 0,
+    "/code": 3,
+    "/web": 2,
+    "/translate": 0,
+    "/memory": 0,
+    "/voice": 0,
+    "/prompt": 0,
+    "/help": 0
+  },
+  "modelUsage": {
+    "auto": 49,
+    "gemini": 0,
+    "openai": 0,
+    "copilot": 0
+  },
+  "featureUsage": {
+    "image_generation": 0,
+    "code_assistant": 3,
+    "translation": 31,
+    "memory_operation": 0
+  },
+  "languageUsage": {
+    "en": 43,
+    "hi": 3,
+    "fr": 3
+  },
+  "latencyStats": {
+    "auto": {
+      "totalMs": 360062,
+      "count": 46,
+      "minMs": 3,
+      "maxMs": 46172
+    },
+    "gemini": {
+      "totalMs": 0,
+      "count": 0,
+      "minMs": 999999,
+      "maxMs": 0
+    },
+    "openai": {
+      "totalMs": 0,
+      "count": 0,
+      "minMs": 999999,
+      "maxMs": 0
+    },
+    "copilot": {
+      "totalMs": 0,
+      "count": 0,
+      "minMs": 999999,
+      "maxMs": 0
+    }
+  }
+}

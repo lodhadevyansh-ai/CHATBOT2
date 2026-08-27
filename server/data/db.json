@@ -1,0 +1,141 @@
+{
+  "users": [
+    {
+      "id": "5f4cd833-ecdf-41a0-9050-35a36575add6",
+      "username": "testuser",
+      "email": "test@example.com",
+      "passwordHash": "$2b$10$sBYbVE9njpGwvHIb7EvsteYGKQH9CcPAsuMAynfGHZYJfrz3dHO5K",
+      "createdAt": "2026-08-06T09:35:37.071Z",
+      "resetToken": "123456",
+      "resetTokenExpiresAt": "2026-08-13T17:43:29.612Z"
+    },
+    {
+      "id": "0fce24de-8643-499a-af6b-eea349a3a343",
+      "username": "kosilodha",
+      "email": "kosilodha@gmail.com",
+      "passwordHash": "$2b$10$rla11qRX54itt39/./o8Z.whwAQbEFAUhm0n.8PXmt8ufbYWZimY2",
+      "createdAt": "2026-08-16T10:03:45.119Z"
+    },
+    {
+      "id": "d81fb513-231b-4965-b8c5-9ba076c6d68b",
+      "username": "rakesh",
+      "email": "rakeshlodha@gmail.com",
+      "passwordHash": "$2b$10$RlqLBJEhgGdvjzWb4tSK3eVjviUhtCTvgTgSkCshyRzqrm9zr2gVC",
+      "createdAt": "2026-08-16T10:23:21.978Z"
+    },
+    {
+      "id": "43391d4c-93f0-45c9-88bd-d63bfcf652e0",
+      "username": "Devyansh",
+      "email": "lodhadevyansh@gmail.com",
+      "passwordHash": "$2b$10$1NxJkZvAQVo4jL0qVnyNdOqEdhkFYlq9XRFGNzu56EH6C2eWqXEVe",
+      "createdAt": "2026-08-26T16:24:36.151Z"
+    }
+  ],
+  "chatHistory": {
+    "5f4cd833-ecdf-41a0-9050-35a36575add6": [
+      {
+        "id": "1",
+        "sender": "user",
+        "message": "Hello AI!"
+      },
+      {
+        "id": "2",
+        "sender": "robot",
+        "message": "Hello! How can I help you today?"
+      }
+    ]
+  },
+  "conversations": [],
+  "memories": [
+    {
+      "id": "7daec6f2-7378-4e21-9e65-f536ba20a2f1",
+      "userId": "test_user",
+      "key": "name",
+      "value": "Devyansh and I live in San Francisco",
+      "rawText": "My name is Devyansh and I live in San Francisco",
+      "category": "identity",
+      "createdAt": "2026-08-09T16:19:33.208Z",
+      "updatedAt": "2026-08-09T16:19:33.208Z"
+    },
+    {
+      "id": "abadb45c-53e8-4fd4-923e-684140fcaae9",
+      "userId": "test_user",
+      "key": "location",
+      "value": "San Francisco",
+      "rawText": "My name is Devyansh and I live in San Francisco",
+      "category": "location",
+      "createdAt": "2026-08-09T16:19:33.213Z",
+      "updatedAt": "2026-08-09T16:19:33.213Z"
+    },
+    {
+      "id": "56f8eb1d-38eb-40eb-a2cc-66b5378766fe",
+      "userId": "test_user2",
+      "key": "name",
+      "value": "Devyansh",
+      "rawText": "My name is Devyansh and I live in San Francisco",
+      "category": "identity",
+      "createdAt": "2026-08-09T16:19:51.253Z",
+      "updatedAt": "2026-08-09T16:19:51.253Z"
+    },
+    {
+      "id": "6cc8f7ad-659f-4b99-bc07-ee5986ebcc0c",
+      "userId": "test_user2",
+      "key": "location",
+      "value": "San Francisco",
+      "rawText": "My name is Devyansh and I live in San Francisco",
+      "category": "location",
+      "createdAt": "2026-08-09T16:19:51.259Z",
+      "updatedAt": "2026-08-09T16:19:51.259Z"
+    },
+    {
+      "id": "f79cb6d8-8b1e-4c08-a615-365265712d50",
+      "userId": "devyansh_user",
+      "key": "name",
+      "value": "Devyansh",
+      "rawText": "My name is Devyansh",
+      "category": "identity",
+      "createdAt": "2026-08-09T16:20:01.700Z",
+      "updatedAt": "2026-08-09T16:20:01.700Z"
+    },
+    {
+      "id": "57b35aed-8dc2-43d9-854e-7c3dee0bec25",
+      "userId": "devyansh_user",
+      "key": "favorite_programming_language",
+      "value": "TypeScript",
+      "rawText": "My favorite programming language is TypeScript",
+      "category": "preference",
+      "createdAt": "2026-08-09T16:20:13.481Z",
+      "updatedAt": "2026-08-09T16:20:13.481Z"
+    },
+    {
+      "id": "7a828a2f-14ea-4618-a4f9-475e33d2d5cf",
+      "userId": "user_123",
+      "key": "name",
+      "value": "Devyansh",
+      "rawText": "My name is Devyansh",
+      "category": "identity",
+      "createdAt": "2026-08-09T16:22:42.096Z",
+      "updatedAt": "2026-08-09T16:22:42.096Z"
+    },
+    {
+      "id": "ac0b2d26-f170-4670-b0f6-ebae82f4c4a0",
+      "userId": "default_user",
+      "key": "name",
+      "value": "Devyansh Lodha",
+      "rawText": "my name is Devyansh Lodha",
+      "category": "identity",
+      "createdAt": "2026-08-10T17:33:07.138Z",
+      "updatedAt": "2026-08-13T18:49:37.591Z"
+    },
+    {
+      "id": "87634c4c-9170-4916-9bf1-c0c7f9a0bf7e",
+      "userId": "default_user",
+      "key": "location",
+      "value": "Pune",
+      "rawText": "I live in Pune",
+      "category": "location",
+      "createdAt": "2026-08-10T17:33:11.800Z",
+      "updatedAt": "2026-08-10T17:33:11.800Z"
+    }
+  ]
+}
