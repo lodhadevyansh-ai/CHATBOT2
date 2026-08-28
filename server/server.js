@@ -208,6 +208,14 @@ app.use((err, req, res, next) => {
 // Connect to MongoDB Database
 connectDB();
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Please close the process using port ${PORT} or restart your terminal.`);
+  } else {
+    console.error('❌ Server error:', err.message);
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`🚀 Authentication & Real-Time Socket.io Server running on http://localhost:${PORT}`);
 });
