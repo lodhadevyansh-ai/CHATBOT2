@@ -68,6 +68,22 @@
           "timestamp": "2026-08-28T10:03:03.610Z"
         }
       ]
+    },
+    {
+      "id": "936d4b10-501b-4330-8634-27e62b8468c4",
+      "userId": "43391d4c-93f0-45c9-88bd-d63bfcf652e0",
+      "title": "hello",
+      "createdAt": "2026-08-28T17:45:31.987Z",
+      "updatedAt": "2026-08-28T17:45:32.025Z",
+      "messages": [
+        {
+          "id": "0f2ae7b3-7d20-49e2-993c-dcdea26d96ec",
+          "question": "hello",
+          "answer": "Hello! How can I help you today? Feel free to ask a question, or upload any documents, code, or images you'd like me to analyze!",
+          "attachments": [],
+          "timestamp": "2026-08-28T17:45:32.025Z"
+        }
+      ]
     }
   ],
   "memories": [
