@@ -38,54 +38,7 @@
       }
     ]
   },
-  "conversations": [
-    {
-      "id": "d170f334-4673-42b2-868a-036db9f7c310",
-      "userId": "43391d4c-93f0-45c9-88bd-d63bfcf652e0",
-      "title": "hello",
-      "createdAt": "2026-08-28T10:00:45.479Z",
-      "updatedAt": "2026-08-28T10:03:03.610Z",
-      "messages": [
-        {
-          "id": "12fd0e4e-47c0-443a-a717-2e89d37769bd",
-          "question": "hello",
-          "answer": "Hello! How can I help you today? Feel free to ask a question, share a document, image, or code, and we can get started!",
-          "attachments": [],
-          "timestamp": "2026-08-28T10:00:45.575Z"
-        },
-        {
-          "id": "59456a18-05a2-4927-9623-a2b7364f4d24",
-          "question": "Explain merge sort in c++ code",
-          "answer": "**Merge Sort** is a popular sorting algorithm based on the **Divide and Conquer** paradigm. \n\n---\n\n### How Merge Sort Works\n\nIt breaks down a large problem into smaller sub-problems, solves them recursively, and then combines their solutions:\n\n1. **Divide:** Split the unsorted array into two halves at the middle index.\n2. **Conquer:** Recursively sort each half until you reach base cases (sub-arrays with only 1 element or 0 elements, which are inherently sorted).\n3. **Combine (Merge):** Merge the two sorted halves back together into a single sorted array.\n\n---\n\n### Complete C++ Code Implementation\n\n```cpp\n#include <iostream>\n#include <vector>\n\n// Function to merge two sorted sub-arrays: arr[left..mid] and arr[mid+1..right]\nvoid merge(std::vector<int>& arr, int left, int mid, int right) {\n    int n1 = mid - left + 1; // Size of left sub-array\n    int n2 = right - mid;      // Size of right sub-array\n\n    // Create temporary vectors to hold the split parts\n    std::vector<int> L(n1);\n    std::vector<int> R(n2);\n\n    // Copy data to temporary vectors L[] and R[]\n    for (int i = 0; i < n1; i++)\n        L[i] = arr[left + i];\n    for (int j = 0; j < n2; j++)\n        R[j] = arr[mid + 1 + j];\n\n    // Merge the temporary vectors back into arr[left..right]\n    int i = 0;    // Initial index of first sub-array (L)\n    int j = 0;    // Initial index of second sub-array (R)\n    int k = left; // Initial index of merged sub-array (arr)\n\n    while (i < n1 && j < n2) {\n        if (L[i] <= R[j]) {\n            arr[k] = L[i];\n            i++;\n        } else {\n            arr[k] = R[j];\n            j++;\n        }\n        k++;\n    }\n\n    // Copy remaining elements of L[], if any\n    while (i < n1) {\n        arr[k] = L[i];\n        i++;\n        k++;\n    }\n\n    // Copy remaining elements of R[], if any\n    while (j < n2) {\n        arr[k] = R[j];\n        j++;\n        k++;\n    }\n}\n\n// Function to implement Merge Sort recursively\nvoid mergeSort(std::vector<int>& arr, int left, int right) {\n    // Base Case: If the range contains 1 or 0 elements, it is already sorted\n    if (left >= right) {\n        return;\n    }\n\n    // Calculate middle index (prevents integer overflow compared to (left + right)/2)\n    int mid = left + (right - left) / 2;\n\n    // Recursively sort the left half and right half\n    mergeSort(arr, left, mid);\n    mergeSort(arr, mid + 1, right);\n\n    // Merge the sorted halves\n    merge(arr, left, mid, right);\n}\n\n// Utility function to print vector elements\nvoid printVector(const std::vector<int>& arr) {\n    for (int num : arr) {\n        std::cout << num << \" \";\n    }\n    std::cout << \"\\n\";\n}\n\nint main() {\n    std::vector<int> arr = {38, 27, 43, 3, 9, 82, 10};\n\n    std::cout << \"Original array:\\n\";\n    printVector(arr);\n\n    // Perform Merge Sort on the entire vector\n    mergeSort(arr, 0, arr.size() - 1);\n\n    std::cout << \"\\nSorted array:\\n\";\n    printVector(arr);\n\n    return 0;\n}\n```\n\n---\n\n### Step-by-Step Code Breakdown\n\n1. **`mid = left + (right - left) / 2;`**  \n   We calculate the middle index to split the array into two halves. Using `left + (right - left) / 2` avoids potential integer overflow bugs that can happen with `(left + right) / 2` when dealing with very large indices.\n\n2. **Recursive calls (`mergeSort`):**  \n   The function calls itself for the left half `(left to mid)` and the right half `(mid + 1 to right)` until sub-arrays of size 1 remain.\n\n3. **Merging (`merge` function):**  \n   - Two auxiliary arrays (`L` and `R`) temporary hold copies of the two split halves.\n   - We compare elements of `L` and `R` one by one, copying the smaller element into the main array `arr`.\n   - Any leftover elements in either `L` or `R` are appended to the end.\n\n---\n\n### Complexity Analysis\n\n* **Time Complexity:**\n  * **Best Case:** $O(N \\log N)$\n  * **Average Case:** $O(N \\log N)$\n  * **Worst Case:** $O(N \\log N)$\n  *(Because the array is always split in half $\\log N$ times, and merging takes linear time $O(N)$ at each level.)*\n\n* **Space Complexity:** $O(N)$  \n  *(Requires extra memory to create temporary sub-arrays during the merge phase.)*\n\n* **Stability:** **Stable** (preserves the relative order of equal elements).",
-          "attachments": [],
-          "timestamp": "2026-08-28T10:01:51.507Z"
-        },
-        {
-          "id": "a1fc2b1b-1a2e-41fa-8121-829ce52c0727",
-          "question": "what tasks you can do?",
-          "answer": "### 🌟 Chatbot Capabilities & Tools Directory\n\nI am equipped with **30 Built-in Tools, AI Image Generation & Search Capabilities**! Here is what I can do:\n\n---\n\n#### 🎨 1. AI Image Generation (New!)\n- **Image Generation**: Generate realistic or artistic AI images from text prompts (e.g. `generate an image of a pirate ship`, `create picture of a futuristic city`, `draw a cute cat in cyberpunk style`)\n\n#### 🧮 2. Utilities & Health\n- **Weather**: Check weather for any city (e.g. `weather in Tokyo`, `how is weather in Paris`)\n- **Currency Conversion**: Convert between currencies (e.g. `convert 100 USD to EUR`, `100 dollars in inr`)\n- **Calculator**: Math & verbal arithmetic (e.g. `add 2 and 3`, `multiply 12 by 4`, `calculate (45 * 12) / 3`)\n- **BMI Calculator**: Calculate Body Mass Index (e.g. `calculate BMI where weight is 70 kg and height is 1.60 m`)\n- **Age Calculator**: Calculate exact age (e.g. `how old am I if born on 1998-05-15`)\n- **Countdown**: Time remaining to target dates (e.g. `countdown 2026-12-31`)\n- **Stopwatch**: Precision timer breakdown (e.g. `stopwatch`)\n- **Unit Converter**: Distance, temp, weight (e.g. `convert 5 km to miles`, `32 C to F`)\n\n#### 🔐 3. Security & Developer Tools\n- **Random Password**: Generate strong passwords (e.g. `generate password length 16`)\n- **QR Code Generator**: Create QR codes (e.g. `qr https://google.com`)\n- **UUID Generator**: Create unique identifiers (e.g. `generate uuid`)\n- **Base64 Encoder/Decoder**: Encode or decode Base64 (e.g. `base64 encode Hello World`)\n- **Hash Generator**: Generate SHA-256 and MD5 hashes (e.g. `hash SHA-256 secret123`)\n- **Markdown Preview**: Format markdown text (e.g. `markdown preview # Title`)\n- **JSON Formatter**: Format and validate JSON (e.g. `json format {\"a\":1}`)\n- **Regex Tester**: Test regular expressions (e.g. `regex test`)\n- **IP Address Lookup**: Get details for an IP (e.g. `ip lookup 8.8.8.8`)\n- **URL Shortener**: Generate short links (e.g. `shorten https://github.com`)\n- **Text Stats & Case**: Word count & case conversion (e.g. `word count hello world`, `uppercase hello`)\n\n#### 🔍 4. Search, Knowledge & Fun\n- **Dictionary / Definition**: Word meanings (e.g. `define serendipity`)\n- **Image Search**: Find public domain images (e.g. `image search mountains`)\n- **Wikipedia Search**: Search Wikipedia topics (e.g. `wiki Quantum Computing`)\n- **News Search**: Get recent news (e.g. `news Artificial Intelligence`)\n- **Movie Search**: Look up movies and ratings (e.g. `movie Inception`)\n- **Book Search**: Look up books and authors (e.g. `book 1984`)\n- **GitHub User Search**: Look up GitHub profiles (e.g. `github torvalds`)\n- **Jokes & Quotes**: Fun tech jokes and inspiration (e.g. `tell me a joke`)\n- **Crypto Tracker**: Prices for BTC, ETH, SOL (e.g. `price of bitcoin`)\n- **Trivia Question**: Interactive trivia questions (e.g. `give me a trivia question`)\n\n---\n*Tip: You can ask me to perform any of these tasks directly in natural language!*",
-          "attachments": [],
-          "timestamp": "2026-08-28T10:03:03.610Z"
-        }
-      ]
-    },
-    {
-      "id": "936d4b10-501b-4330-8634-27e62b8468c4",
-      "userId": "43391d4c-93f0-45c9-88bd-d63bfcf652e0",
-      "title": "hello",
-      "createdAt": "2026-08-28T17:45:31.987Z",
-      "updatedAt": "2026-08-28T17:45:32.025Z",
-      "messages": [
-        {
-          "id": "0f2ae7b3-7d20-49e2-993c-dcdea26d96ec",
-          "question": "hello",
-          "answer": "Hello! How can I help you today? Feel free to ask a question, or upload any documents, code, or images you'd like me to analyze!",
-          "attachments": [],
-          "timestamp": "2026-08-28T17:45:32.025Z"
-        }
-      ]
-    }
-  ],
+  "conversations": [],
   "memories": [
     {
       "id": "7daec6f2-7378-4e21-9e65-f536ba20a2f1",
