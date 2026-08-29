@@ -4,10 +4,15 @@ import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chat.js';
 import analyticsRoutes from './routes/analytics.js';
 import { connectDB } from './db/mongo.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_in_production';
 
@@ -192,6 +197,18 @@ app.get('/api/health', (req, res) => {
     realtime: {
       socketConnectedCount: connectedUsers.size
     }
+  });
+});
+
+// Serve static frontend assets (built Vite app) in production
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// SPA fallback for client-side routing
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) next();
   });
 });
 

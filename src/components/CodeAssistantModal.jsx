@@ -90,7 +90,7 @@ export function CodeAssistantModal({ isOpen, onClose, onSendToChat, selectedMode
     setActiveTab(mode);
 
     try {
-      const response = await fetch('http://localhost:5000/api/chat/code-assistant', {
+      const response = await fetch('/api/chat/code-assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
