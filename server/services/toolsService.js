@@ -266,18 +266,7 @@ ${JSON.stringify(parsed, null, 2)}
     return await searchWikipedia(query);
   }
 
-  // 26. News Search
-  if (lower.startsWith('news') || lower.includes('news search')) {
-    const topic = prompt.replace(/(news|search)\s*(about|on|for)?/i, '').trim() || 'Technology';
-    return `📰 **Latest News Highlights on "${topic}"**:
-
-1. **Major Breakthroughs in ${topic} Announced Today**
-   *Industry leaders showcase next-generation innovations.*
-2. **Global Summit Focuses on the Future of ${topic}**
-   *Key insights and policy updates from international experts.*
-3. **Trends Shaping ${topic} in 2026**
-   *Analysis of market shifts and upcoming technologies.*`;
-  }
+  // 26. News Search - Handled by Real-Time Search & Google Search Grounding Pipeline in aiService.js
 
   // 27. Movie Search
   if (lower.startsWith('movie') || lower.includes('movie search')) {

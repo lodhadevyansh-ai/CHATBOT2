@@ -448,16 +448,462 @@ async function callOpenRouter(prompt, history, docTexts, memoryContext = '') {
 }
 
 /**
- * Call Google Gemini API with injected AI Memory context
+ * Helper to determine if a prompt requires current/real-time web search grounding
+ * @param {string} prompt
+ * @returns {boolean}
  */
-async function callGemini(prompt, history, docTexts, imageParts, memoryContext = '') {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_gemini_api_key_here') || apiKey.includes('your_actual_key_here')) {
-    console.warn('[Gemini API] ⚠️ No valid GEMINI_API_KEY configured in .env (or contains placeholder text). Skipping Gemini API call.');
-    return null;
+/**
+ * Intent-Based & Year-Aware Classifier to determine if a prompt requires real-time web search
+ * @param {string} prompt - Current user prompt
+ * @param {Array} history - Previous conversation history [{ question, answer }]
+ * @returns {boolean}
+ */
+export function isCurrentInfoQuery(prompt, history = []) {
+  if (!prompt || typeof prompt !== 'string') return false;
+
+  const raw = prompt.trim();
+  const p = raw.toLowerCase().replace(/['"’`]/g, '');
+  const currentYear = new Date().getFullYear(); // e.g. 2026
+
+  // 1. Check for explicit historical vs future years
+  const yearMatch = p.match(/\b(19\d{2}|20\d{2})\b/);
+  if (yearMatch) {
+    const explicitYear = parseInt(yearMatch[1], 10);
+    if (explicitYear < currentYear) {
+      console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=false (reason="historical_year_${explicitYear}")`);
+      return false;
+    } else if (explicitYear > currentYear) {
+      console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=false (reason="future_year_${explicitYear}")`);
+      return false;
+    }
   }
 
-  console.log(`[Gemini API] 🌐 Initiating real Gemini API request for non-tool prompt: "${prompt.substring(0, 60)}${prompt.length > 60 ? '...' : ''}"`);
+  // 2. Educational & Conceptual Static Questions Exclusion Filter
+  const staticExclusionPatterns = [
+    /^(what\s+is|explain|how\s+does|how\s+to|definition\s+of)\s+(a|an|the)?\s*(binary\s+search|dijkstra|linked\s+list|inheritance|photosynthesis|mongodb|jwt|react\s+state|http\s+status|http|sorting|algorithm|flood\s+formation|cyclone|election|stock\s+market|flood|news|current\s+account|recent\s+event|recursion)/i,
+    /^(what\s+does\s+currently\s+mean|what\s+does\s+recent\s+mean|difference\s+between|time\s+complexity)/i
+  ];
+
+  const hasStrongTemporalMarker = /\b(today|tonight|yesterday|tomorrow|this week|right now|currently|2026)\b/i.test(p);
+  const hasNewsKeyword = /\b(latest|breaking|news|headline|headlines|updates?)\b/i.test(p);
+
+  for (const pattern of staticExclusionPatterns) {
+    if (pattern.test(p) && !hasStrongTemporalMarker && !hasNewsKeyword) {
+      console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=false (reason="static_concept_exclusion")`);
+      return false;
+    }
+  }
+
+  // 3. Sports & Major Event Winner / Outcome Intent
+  const sportsEventPatterns = [
+    /\bwho\s+(won|is\s+winning|leads?|lost|scored)\b/i,
+    /\b(who\s+won\s+the|what\s+happened\s+in\s+the)\s+(fifa|world\s+cup|champions\s+league|wimbledon|super\b|ipl|olympics|nba|super\s+bowl|world\s+series|premier\s+league|election|match)\b/i,
+    /\b(who\s+won\s+the\s+match|who\s+won\s+the\s+game|who\s+won\s+the\s+election|who\s+won\s+the\s+race)\b/i,
+    /\b(match|game|election|race|tournament|final)\s+(results?|outcome|score|scores|winner)\b/i
+  ];
+
+  for (const rx of sportsEventPatterns) {
+    if (rx.test(p)) {
+      console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=true (reason="sports_event_winner_intent")`);
+      return true;
+    }
+  }
+
+  // 4. Current Status & Office Holders Intent
+  const currentStatusPatterns = [
+    /\b(is|has|was)\s+[a-z0-9\s.'-]+\s+(currently|now|recently|today|in\s+custody|held|arrested|alive|in\s+office|resigned)\b/i,
+    /\bwho\s+(is|was)\s+(currently|the\s+current)\s+[a-z0-9\s.'-]+\b/i,
+    /\bwhat\s+(is|are)\s+the\s+current\s+(status|situation|price|weather|president|prime\s+minister|leader|rate)\b/i,
+    /\bcurrent\s+(situation|status|news|updates?)\s+in\b/i,
+    /\b(flash\s+floods?|earthquake|floods?|cyclone|war|conflict)\s+news\b/i,
+    /\bnews\s+(about|on|for|in)\b/i
+  ];
+
+  for (const rx of currentStatusPatterns) {
+    if (rx.test(p)) {
+      console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=true (reason="current_status_intent")`);
+      return true;
+    }
+  }
+
+  // 5. Open Broad Real-Time / World News Queries
+  const broadNewsPatterns = [
+    /\b(world|international|national|global|top|breaking|today'?s?)\s+(news|headlines|updates|stories|developments|events)\b/i,
+    /\b(latest|recent)\s+(world|international|national|global|tech|technology|ai|business|stock\s+market|sports|cricket|football|election|earthquake|flood|floods|cyclone|disaster|government)\s*(news|headlines|updates|stories|developments)?\b/i,
+    /\bwhat'?s?\s+(happening|going\s+on)\b/i,
+    /\bwhat\s+(happened|occurred|transpired)\b/i,
+    /\b(give\s+me|tell\s+me|show\s+me)\s+(today'?s?|the\s+latest|breaking)\s*(news|headlines|updates|stories)?\b/i,
+    /\b(anything\s+important\s+happening|top\s+stories\s+today|breaking\s+news\s+today)\b/i,
+    /^(latest\s+news|today'?s?\s+news|world\s+news|international\s+news|national\s+news|global\s+news|top\s+headlines|breaking\s+news)$/i
+  ];
+
+  for (const rx of broadNewsPatterns) {
+    if (rx.test(p)) {
+      console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=true (reason="broad_realtime_news_pattern")`);
+      return true;
+    }
+  }
+
+  // 6. Topic/Entity + Real-Time Signal Combination
+  const temporalSignals = [
+    'latest', 'today', 'todays', 'tonight', 'yesterday', 'this week', 'right now',
+    'currently', 'recent', 'recently', 'new', 'newest', 'breaking', 'ongoing',
+    'just in', 'as of', 'current', 'updates', 'update'
+  ];
+
+  const eventSignals = [
+    'news', 'headline', 'headlines', 'update', 'updates', 'development', 'developments',
+    'flood', 'floods', 'earthquake', 'cyclone', 'hurricane', 'storm', 'wildfire', 'disaster',
+    'protest', 'protests', 'election', 'elections', 'war', 'conflict', 'attack', 'incident',
+    'custody', 'president', 'prime minister', 'ruling', 'decision', 'court', 'strike',
+    'match', 'score', 'scores', 'result', 'results', 'price', 'rates', 'market', 'status',
+    'situation', 'announcement', 'outbreak'
+  ];
+
+  const hasTemporal = temporalSignals.some(s => p.includes(s));
+  const hasEvent = eventSignals.some(s => p.includes(s));
+
+  if (hasTemporal && hasEvent) {
+    console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=true (reason="temporal_and_event_combination")`);
+    return true;
+  }
+
+  // 7. Conversational History Context Tracking (Follow-up Queries)
+  if (Array.isArray(history) && history.length > 0) {
+    const lastTurn = history[history.length - 1];
+    const lastQ = (lastTurn.question || '').toLowerCase();
+
+    const prevTurnWasCurrent = isCurrentInfoQuery(lastQ, []);
+
+    if (prevTurnWasCurrent) {
+      const followUpSignals = [
+        /^what\s+about\b/i,
+        /^any\s+(updates?|news|developments?)\??$/i,
+        /^what\s+happened\s+today\??$/i,
+        /^and\s+[a-z0-9\s.'-]+\??$/i,
+        /^how\s+about\b/i,
+        /^more\s+details\??$/i
+      ];
+
+      for (const rx of followUpSignals) {
+        if (rx.test(p)) {
+          console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=true (reason="conversational_history_followup_context")`);
+          return true;
+        }
+      }
+    }
+  }
+
+  console.log(`[CurrentQueryDetection] prompt="${raw}" -> current=false (reason="no_realtime_signal")`);
+  return false;
+}
+
+/**
+ * Dedicated News & Current Search Query Generator
+ * Transform user natural language prompt into high-precision search query
+ * @param {string} prompt
+ * @param {Array} history
+ * @returns {string}
+ */
+export function generateNewsSearchQuery(prompt, history = []) {
+  let cleaned = prompt.trim();
+  const currentYear = new Date().getFullYear();
+
+  // Conversational follow-up resolution
+  if (Array.isArray(history) && history.length > 0) {
+    const lastTurn = history[history.length - 1];
+    const lastQ = (lastTurn.question || '').toLowerCase();
+
+    if (/^what\s+about\s+(.+)/i.test(cleaned)) {
+      const topicMatch = cleaned.match(/^what\s+about\s+(.+)/i);
+      const newTopic = topicMatch ? topicMatch[1].replace(/\?$/, '').trim() : '';
+      if (newTopic) {
+        return `${newTopic} latest breaking news today ${currentYear}`;
+      }
+    } else if (/^any\s+updates\??$/i.test(cleaned)) {
+      const prevTopic = lastQ.replace(/(what'?s?|the|latest|news|about|in|today|right|now|\?)/gi, '').trim();
+      if (prevTopic) {
+        return `${prevTopic} latest breaking news updates today ${currentYear}`;
+      }
+    }
+  }
+
+  // Broad current news prompts
+  if (/^(latest\s+news|today'?s?\s+news|world\s+news|international\s+news|national\s+news|global\s+news|top\s+headlines|breaking\s+news|what'?s?\s+happening\s+(in\s+the\s+world|today|right\s+now)?\??|what\s+happened\s+today\??)$/i.test(cleaned)) {
+    return `world latest breaking news top headlines today ${currentYear}`;
+  }
+
+  // Specific handling for Sports & Event Winner Queries
+  if (/\bwho\s+won\b/i.test(cleaned) || /\bwinner\b/i.test(cleaned)) {
+    const eventTerm = cleaned.replace(/^(who\s+won\s+(the\s+)?|what\s+is\s+the\s+winner\s+of\s+(the\s+)?)/gi, '').replace(/\?$/g, '').trim();
+    return `${eventTerm} winner final result news ${currentYear}`;
+  }
+
+  // Strip conversational question prefixes & filler
+  cleaned = cleaned
+    .replace(/^(please|can\s+you|tell\s+me|give\s+me|show\s+me|what\s+are|what\s+is|what'?s?|where\s+is|who\s+is)\s+(the\s+latest\s+(developments|updates|news)\s+(in|on|about)\s+)?/gi, '')
+    .replace(/^the\s+latest\s+(developments|updates|news)\s+(in|on|about)\s+/gi, '')
+    .replace(/\?$/g, '')
+    .trim();
+
+  // Specific handling for AI & Technology combinations
+  if (/\b(ai|artificial\s+intelligence)\b/i.test(cleaned) && /\b(tech|technology)\b/i.test(cleaned)) {
+    return `latest AI artificial intelligence technology news today ${currentYear}`;
+  }
+
+  if (!/\b(news|latest|today|updates?|breaking)\b/i.test(cleaned)) {
+    cleaned += ` latest news today ${currentYear}`;
+  } else if (!/\b(today|2025|2026)\b/i.test(cleaned)) {
+    cleaned += ` today ${currentYear}`;
+  }
+
+  return cleaned;
+}
+
+/**
+ * Format grounding source citations from Gemini groundingMetadata
+ * @param {string} text
+ * @param {Object} groundingMetadata
+ * @returns {string}
+ */
+function formatGroundingCitations(text, groundingMetadata) {
+  if (!text || !groundingMetadata) return text;
+
+  const chunks = groundingMetadata.groundingChunks || [];
+  const sources = [];
+  const seenUrls = new Set();
+
+  chunks.forEach((chunk, index) => {
+    if (chunk.web && chunk.web.uri) {
+      const url = chunk.web.uri;
+      const title = chunk.web.title || `Source ${index + 1}`;
+      if (!seenUrls.has(url)) {
+        seenUrls.add(url);
+        sources.push(`- [${title}](${url})`);
+      }
+    }
+  });
+
+  if (sources.length > 0) {
+    return `${text.trim()}\n\n---\n### 🌐 **Sources & Live References**:\n${sources.join('\n')}`;
+  }
+
+  return text;
+}
+
+/**
+ * Multi-Source Live Web & News Retrieval Engine
+ * Queries Google News RSS + DuckDuckGo, extracts pubDates, filters meta-media descriptions, and ranks credible recency.
+ * @param {string} query
+ * @returns {Promise<Array<{ title: string, snippet: string, url: string, source: string, date: string, isWiki: boolean }>>}
+ */
+export async function fetchWebSearchResults(query) {
+  const newsResults = [];
+  const backgroundResults = [];
+  const seenUrls = new Set();
+
+  // Credible domain ranking weights
+  const highCredibilityDomains = [
+    'reuters.com', 'apnews.com', 'bbc.com', 'bbc.co.uk', 'aljazeera.com', 'npr.org',
+    'theguardian.com', 'nytimes.com', 'washingtonpost.com', 'bloomberg.com', 'wsj.com',
+    'cnn.com', 'cbsnews.com', 'nbcnews.com', 'afp.com', 'news.google.com', 'gov', 'gov.np'
+  ];
+
+  // Patterns to reject meta-descriptions of TV shows, channels, or journalism awards
+  const metaMediaJunkPatterns = [
+    /American\s+TV\s+program/i,
+    /British\s+TV\s+channel/i,
+    /Indian\s+TV\s+channel/i,
+    /television\s+series/i,
+    /journalism\s+award/i,
+    /Emmy\s+Nominees/i,
+    /Best\s+Female\s+Playback\s+Singer/i,
+    /List\s+of\s+terrorist\s+incidents/i,
+    /studio\s+album/i
+  ];
+
+  // 1. Fetch Google News RSS Feed (Live Breaking News Endpoint)
+  try {
+    const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+    const res = await fetchWithTimeout(googleNewsUrl, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+      }
+    }, 5000);
+
+    if (res.ok) {
+      const xml = await res.text();
+      const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+      let match;
+      while ((match = itemRegex.exec(xml)) !== null && newsResults.length < 8) {
+        const itemXml = match[1];
+        const titleMatch = itemXml.match(/<title>(.*?)<\/title>/i);
+        const linkMatch = itemXml.match(/<link>(.*?)<\/link>/i);
+        const pubDateMatch = itemXml.match(/<pubDate>(.*?)<\/pubDate>/i);
+        const sourceMatch = itemXml.match(/<source[^>]*>(.*?)<\/source>/i);
+
+        let title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').trim() : '';
+        let url = linkMatch ? linkMatch[1].trim() : '';
+        let pubDate = pubDateMatch ? pubDateMatch[1].trim() : '';
+        let sourceName = sourceMatch ? sourceMatch[1].trim() : '';
+
+        if (title && url && !seenUrls.has(url)) {
+          seenUrls.add(url);
+
+          // Separate publisher from title if formatted like "Headline - Publisher"
+          if (!sourceName && title.includes(' - ')) {
+            const parts = title.split(' - ');
+            sourceName = parts.pop().trim();
+            title = parts.join(' - ').trim();
+          }
+
+          let domain = sourceName || 'News Media';
+          try {
+            if (url) domain = new URL(url).hostname.replace('www.', '');
+          } catch { /* ignore */ }
+
+          newsResults.push({
+            title,
+            snippet: `Published ${pubDate || 'recently'} by ${sourceName || domain}. ${title}`,
+            url,
+            source: domain,
+            date: pubDate,
+            isWiki: false,
+            score: highCredibilityDomains.some(d => domain.includes(d)) ? 10 : 5
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Web Search Google News RSS Warning]:', err.message);
+  }
+
+  // 2. Fetch DuckDuckGo HTML Search
+  try {
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const res = await fetchWithTimeout(ddgUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    }, 5000);
+
+    if (res.ok) {
+      const html = await res.text();
+      const snippetRegex = /<a class="result__snippet[^"]*"[^>]*>(.*?)<\/a>/gi;
+      const titleRegex = /<a class="result__a"[^>]*>(.*?)<\/a>/gi;
+      const urlRegex = /<a class="result__url"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi;
+
+      const snippets = [], titles = [], urls = [];
+      let match;
+
+      while ((match = titleRegex.exec(html)) !== null) {
+        titles.push(match[1].replace(/<[^>]+>/g, '').trim());
+      }
+      while ((match = snippetRegex.exec(html)) !== null) {
+        snippets.push(match[1].replace(/<[^>]+>/g, '').trim());
+      }
+      while ((match = urlRegex.exec(html)) !== null) {
+        let u = match[1].replace(/<[^>]+>/g, '').trim();
+        if (u.startsWith('//')) u = 'https:' + u;
+        urls.push(u);
+      }
+
+      for (let i = 0; i < Math.min(titles.length, snippets.length, 5); i++) {
+        const u = urls[i] || '';
+        const snip = snippets[i] || '';
+        const tit = titles[i] || '';
+
+        // Skip TV show meta-descriptions
+        if (metaMediaJunkPatterns.some(rx => rx.test(snip) || rx.test(tit))) {
+          continue;
+        }
+
+        if (snip && !seenUrls.has(u)) {
+          if (u) seenUrls.add(u);
+          let domain = 'Web Source';
+          try {
+            if (u) domain = new URL(u).hostname.replace('www.', '');
+          } catch { /* ignore */ }
+
+          const isWiki = domain.includes('wikipedia.org');
+          const item = {
+            title: tit || 'Web Search Result',
+            snippet: snip,
+            url: u,
+            source: domain,
+            date: 'Recent',
+            isWiki,
+            score: isWiki ? 1 : (highCredibilityDomains.some(d => domain.includes(d)) ? 8 : 4)
+          };
+
+          if (isWiki) {
+            backgroundResults.push(item);
+          } else {
+            newsResults.push(item);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Web Search DDG Warning]:', err.message);
+  }
+
+  // 3. Wikipedia Fallback (demoted strictly to BACKGROUND ONLY if newsResults is empty)
+  if (newsResults.length === 0) {
+    try {
+      const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+      const wikiRes = await fetchWithTimeout(wikiUrl, {}, 4000);
+      if (wikiRes.ok) {
+        const wikiData = await wikiRes.json();
+        const searchHits = wikiData.query?.search || [];
+        searchHits.slice(0, 3).forEach(hit => {
+          const cleanSnippet = hit.snippet.replace(/<[^>]+>/g, '').trim();
+          if (!metaMediaJunkPatterns.some(rx => rx.test(cleanSnippet) || rx.test(hit.title))) {
+            const u = `https://en.wikipedia.org/wiki/${encodeURIComponent(hit.title.replace(/\s+/g, '_'))}`;
+            if (!seenUrls.has(u)) {
+              seenUrls.add(u);
+              backgroundResults.push({
+                title: hit.title,
+                snippet: `[Background Reference]: ${cleanSnippet}`,
+                url: u,
+                source: 'wikipedia.org',
+                date: 'Background Reference',
+                isWiki: true,
+                score: 1
+              });
+            }
+          }
+        });
+      }
+    } catch (wikiErr) {
+      console.warn('[Web Search Wiki Warning]:', wikiErr.message);
+    }
+  }
+
+  // Combine results: Primary news results FIRST, background Wikipedia LAST
+  newsResults.sort((a, b) => b.score - a.score);
+  const combined = [...newsResults, ...backgroundResults];
+
+  console.log(`[Web Search Audit] query="${query}" -> returned ${combined.length} results (${newsResults.length} live news, ${backgroundResults.length} background)`);
+  return combined;
+}
+
+/**
+ * Call Google Gemini API with injected AI Memory context & Google Search Grounding support
+ */
+async function callGemini(prompt, history, docTexts, imageParts, memoryContext = '', enableGrounding = false, searchContext = '') {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const isKeyPresent = !!apiKey && apiKey.trim() !== '' && !apiKey.includes('your_gemini_api_key_here') && !apiKey.includes('your_actual_key_here');
+
+  console.log(`[AI GEMINI] callGemini invoked: grounding=${enableGrounding}, customSearch=${!!searchContext}`);
+  console.log(`[AI GEMINI] GEMINI_API_KEY present: ${isKeyPresent}, length: ${isKeyPresent ? apiKey.length : 0}`);
+
+  if (!isKeyPresent) {
+    console.warn('[AI GEMINI RESULT] success: false, error: "NO_VALID_GEMINI_API_KEY"');
+    return null;
+  }
 
   // Preferred active Gemini models to try in order
   const modelsToTry = [
@@ -467,7 +913,9 @@ async function callGemini(prompt, history, docTexts, imageParts, memoryContext =
     'gemini-pro-latest'
   ];
 
-  let systemText = 'System Instruction: You are an intelligent AI chatbot equipped with file parsing and multi-modal comprehension (PDFs, Word documents, plain text, code, and images) plus built-in tools.';
+  const currentDateStr = new Date().toISOString().split('T')[0];
+  let systemText = `System Instruction: You are an intelligent AI chatbot equipped with real-time news retrieval capabilities.\nToday's current date is ${currentDateStr}.\n\nSTRICT CURRENT NEWS RULES:\n1. You are answering a CURRENT INFORMATION / NEWS query.\n2. Use ONLY the retrieved sources for claims about current events.\n3. Do not use your pretrained memory to invent or update current facts.\n4. Do not treat TV channel overviews, media descriptions, or old Wikipedia articles as today's breaking news.\n5. Every factual claim must be backed by the retrieved search sources with dates where available.\n6. Format your answer as a clear, natural news summary (direct answer, key developments, dates, context, sources). Never output generic templates like 'Executive Overview & Analysis'.`;
+
   if (memoryContext) {
     systemText += `\n\n${memoryContext}`;
   }
@@ -479,7 +927,7 @@ async function callGemini(prompt, history, docTexts, imageParts, memoryContext =
     },
     {
       role: 'model',
-      parts: [{ text: 'Understood! I will use stored user memory, analyze files, images, documents, and assist effectively.' }]
+      parts: [{ text: 'Understood! I will follow strict current news grounding rules, verify publication dates, rely strictly on retrieved live sources, and present accurate news updates.' }]
     }
   ];
 
@@ -492,7 +940,10 @@ async function callGemini(prompt, history, docTexts, imageParts, memoryContext =
 
   const userParts = [];
   let fullPromptText = prompt;
-  if (docTexts.length > 0) {
+
+  if (searchContext) {
+    fullPromptText = `--- REAL-TIME RETRIEVED NEWS & SEARCH RESULTS (Current Date: ${currentDateStr}) ---\n${searchContext}\n--- END RETRIEVED SEARCH RESULTS ---\n\nUser Question: "${prompt}"\n\nPlease answer the user question using ONLY the retrieved news sources above. Provide a structured, verified news response with dates and source links. If retrieved sources are insufficient or outdated, explicitly state that live current information could not be verified.`;
+  } else if (docTexts.length > 0) {
     fullPromptText = `${docTexts.join('\n\n')}\n\nUser Question: ${prompt || 'Please analyze the attached document(s) and provide key insights.'}`;
   }
 
@@ -500,45 +951,61 @@ async function callGemini(prompt, history, docTexts, imageParts, memoryContext =
   imageParts.forEach(img => userParts.push(img));
   contents.push({ role: 'user', parts: userParts });
 
-  // 1. Try SDK call with official GoogleGenAI client (fastest & handles active models)
+  // Grounding Tool configuration
+  const sdkConfig = enableGrounding ? { tools: [{ googleSearch: {} }] } : {};
+
+  // 1. Try SDK call with official GoogleGenAI client
   try {
     const ai = new GoogleGenAI({ apiKey });
     for (const modelName of modelsToTry) {
+      console.log(`[AI GEMINI] request started for model: ${modelName}`);
       try {
         const response = await ai.models.generateContent({
           model: modelName,
           contents: contents,
+          config: sdkConfig
         });
 
         if (response && response.text) {
-          console.log(`[Gemini API] ✅ Successfully generated response using SDK model: ${modelName}`);
-          return response.text;
+          console.log(`[AI GEMINI RESULT] success: true, model: ${modelName}, HTTP status: 200`);
+          const metadata = response.candidates?.[0]?.groundingMetadata;
+          return formatGroundingCitations(response.text, metadata);
         }
       } catch (modelErr) {
-        console.warn(`[Gemini API] SDK model ${modelName} call attempted (${modelErr.message}).`);
+        const status = modelErr.status || modelErr.code || 'API_ERR';
+        console.warn(`[AI GEMINI RESULT] model: ${modelName}, success: false, HTTP status: ${status}, error message: "${modelErr.message.substring(0, 180)}..."`);
       }
     }
   } catch (err) {
-    console.warn('[Gemini API] SDK initialization warning:', err.message);
+    console.warn('[AI GEMINI RESULT] SDK initialization warning:', err.message);
   }
 
   // 2. Gemini REST API fallback with 6s timeout
   for (const modelName of modelsToTry) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      const payload = { contents };
+      if (enableGrounding) {
+        payload.tools = [{ googleSearch: {} }];
+      }
+
       const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents }),
+        body: JSON.stringify(payload),
       }, 6000);
 
       const data = await res.json();
       if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
-        console.log(`[Gemini API] ✅ Rapid response from REST API model: ${modelName}`);
-        return data.candidates[0].content.parts[0].text;
+        console.log(`[AI GEMINI RESULT] success: true (REST API), model: ${modelName}, HTTP status: ${res.status}`);
+        const text = data.candidates[0].content.parts[0].text;
+        const metadata = data.candidates[0].groundingMetadata;
+        return formatGroundingCitations(text, metadata);
+      } else if (data.error) {
+        console.warn(`[AI GEMINI RESULT] REST model: ${modelName}, success: false, HTTP status: ${data.error.code || res.status}, error message: "${data.error.message.substring(0, 180)}..."`);
       }
     } catch (err) {
-      console.warn(`[Gemini API] REST model ${modelName} fetch skipped: ${err.message}`);
+      console.warn(`[AI GEMINI RESULT] REST model ${modelName} fetch skipped: ${err.message}`);
     }
   }
 
@@ -555,99 +1022,188 @@ async function callGemini(prompt, history, docTexts, imageParts, memoryContext =
  * @param {string} targetLanguage - Language code preference ('en', 'hi', 'fr', 'es', etc.)
  * @returns {Promise<{ response: string, newMemories: Array, totalMemories: Array }>}
  */
-export async function generateAIResponse(prompt, history = [], attachments = [], modelProvider = 'auto', userId = 'default_user', targetLanguage = 'en') {
-  // 1. Tool check FIRST (Instant response under 5ms if prompt matches built-in tool or formula)
-  if (!attachments || attachments.length === 0) {
-    const toolResult = await executeToolIfMatched(prompt);
-    if (toolResult) {
-      console.log(`[AI Routing] ⚡ Instant tool match for: "${prompt}" -> Returning in <5ms.`);
-      // Run background memory extraction without delaying tool response
-      extractMemoriesFromPrompt(prompt, userId).catch(() => {});
-      const userMemories = await getUserMemories(userId).catch(() => []);
-      
-      let finalToolResponse = toolResult;
-      if (targetLanguage && targetLanguage !== 'en' && targetLanguage !== 'auto') {
-        finalToolResponse = await translateText(toolResult, targetLanguage);
+export function generateAIResponse(prompt, history = [], attachments = [], modelProvider = 'auto', userId = 'default_user', targetLanguage = 'en') {
+  return (async () => {
+    console.log(`\n[CHAT DEBUG] prompt: "${prompt}"`);
+    console.log(`[CHAT DEBUG] model: "${modelProvider}"`);
+    console.log(`[CHAT DEBUG] userId: "${userId}"`);
+    console.log(`[CHAT DEBUG] attachments: ${attachments ? attachments.length : 0}`);
+    console.log(`[CHAT DEBUG] targetLanguage: "${targetLanguage}"`);
+
+    // Detect if query requires real-time/current-information search grounding
+    const isCurrentInfo = isCurrentInfoQuery(prompt, history);
+    console.log(`[AI ROUTING] isCurrentInfoQuery: ${isCurrentInfo}`);
+    console.log(`[AI ROUTING] selected route: ${isCurrentInfo ? 'PATH_B_CURRENT_SEARCH' : 'PATH_A_NORMAL_GEMINI'}`);
+
+    // 1. Tool check FIRST (Instant response under 5ms if prompt matches built-in tool or formula)
+    if (!isCurrentInfo && (!attachments || attachments.length === 0)) {
+      const toolResult = await executeToolIfMatched(prompt);
+      if (toolResult) {
+        console.log(`[AI FINAL] response source: Instant Tool Match ("${prompt}")`);
+        extractMemoriesFromPrompt(prompt, userId).catch(() => {});
+        const userMemories = await getUserMemories(userId).catch(() => []);
+
+        let finalToolResponse = toolResult;
+        if (targetLanguage && targetLanguage !== 'en' && targetLanguage !== 'auto') {
+          finalToolResponse = await translateText(toolResult, targetLanguage);
+        }
+        return { response: finalToolResponse, newMemories: [], userMemories };
       }
-      return { response: finalToolResponse, newMemories: [], userMemories };
     }
-  }
 
-  // 2. Parallel memory fetching and attachment parsing
-  const [userMemories, parsedAttachments] = await Promise.all([
-    getUserMemories(userId).catch(() => []),
-    Array.isArray(attachments) && attachments.length > 0
-      ? Promise.all(attachments.map(att => parseAttachment(att)))
-      : Promise.resolve([])
-  ]);
+    // 2. Parallel memory fetching and attachment parsing
+    const [userMemories, parsedAttachments] = await Promise.all([
+      getUserMemories(userId).catch(() => []),
+      Array.isArray(attachments) && attachments.length > 0
+        ? Promise.all(attachments.map(att => parseAttachment(att)))
+        : Promise.resolve([])
+    ]);
 
-  // Start memory extraction asynchronously in background
-  const memoryExtractionPromise = extractMemoriesFromPrompt(prompt, userId).catch(() => []);
+    const memoryExtractionPromise = extractMemoriesFromPrompt(prompt, userId).catch(() => []);
+    const langInstruction = getLanguageSystemInstruction(targetLanguage);
+    const memoryContext = formatMemoriesForContext(userMemories) + langInstruction;
 
-  const langInstruction = getLanguageSystemInstruction(targetLanguage);
-  const memoryContext = formatMemoriesForContext(userMemories) + langInstruction;
+    // Prepare document text parts & image parts
+    const docTexts = parsedAttachments
+      .filter(a => !a.isImage && a.text)
+      .map(a => `--- BEGIN ATTACHED FILE: "${a.name}" ---\n${a.text}\n--- END ATTACHED FILE: "${a.name}" ---`);
 
-  // Prepare document text parts & image parts
-  const docTexts = parsedAttachments
-    .filter(a => !a.isImage && a.text)
-    .map(a => `--- BEGIN ATTACHED FILE: "${a.name}" ---\n${a.text}\n--- END ATTACHED FILE: "${a.name}" ---`);
+    const imageParts = parsedAttachments
+      .filter(a => a.isImage && a.base64Data)
+      .map(img => ({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.base64Data
+        }
+      }));
 
-  const imageParts = parsedAttachments
-    .filter(a => a.isImage && a.base64Data)
-    .map(img => ({
-      inlineData: {
-        mimeType: img.mimeType,
-        data: img.base64Data
+    let aiResult = null;
+    let responseSource = 'Unknown';
+
+    // PATH B: Real-Time Search Routing Pipeline
+    if (isCurrentInfo) {
+      console.log(`[Real-Time Pipeline] 🚀 Started processing current-information query: "${prompt}"`);
+
+      // Step 1: Try Native Gemini Google Search Grounding
+      if (modelProvider === 'gemini' || modelProvider === 'auto') {
+        aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, true, '');
+        if (aiResult) {
+          responseSource = 'Search Grounding (Native Gemini)';
+          console.log(`[Real-Time Pipeline] native_grounding=success`);
+        } else {
+          console.log(`[Real-Time Pipeline] native_grounding=failure`);
+        }
       }
-    }));
 
-  let aiResult = null;
+      // Step 2: Fallback to Multi-Source Web Search Engine if Native Search Grounding is unavailable
+      if (!aiResult) {
+        console.log(`[Real-Time Pipeline] fallback_search=started`);
+        const searchQuery = generateNewsSearchQuery(prompt, history);
+        console.log(`[Real-Time Pipeline] generated_news_search_query="${searchQuery}"`);
 
-  // Single-pass API routing
-  if (modelProvider === 'openai') {
-    aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
-  } else if (modelProvider === 'copilot') {
-    aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
-  } else if (modelProvider === 'gemini') {
-    aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext);
-  }
+        const searchResults = await fetchWebSearchResults(searchQuery);
+        console.log(`[Real-Time Pipeline] fallback_results=${searchResults ? searchResults.length : 0}`);
 
-  // Auto routing fallback: Try primary configured API key first
-  if (!aiResult) {
-    if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('your_')) {
-      aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext);
-    } else if (process.env.OPENAI_API_KEY) {
-      aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
-    } else if (process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY) {
-      aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
-    }
-  }
+        if (searchResults && searchResults.length > 0) {
+          const formattedContext = searchResults.map((r, i) =>
+            `Source [${i + 1}] (${r.source} | Date: ${r.date || 'Recent'}): "${r.title}" (${r.url})\nSnippet: ${r.snippet}`
+          ).join('\n\n');
 
-  // Rapid Fallback to Smart Knowledge & Offline Engine (under 2ms)
-  if (!aiResult) {
-    if (parsedAttachments.length > 0) {
-      aiResult = getSmartOfflineDocumentResponse(parsedAttachments, prompt);
+          // Call Gemini 3.6 Flash passing retrieved live search results as context
+          aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, false, formattedContext);
+
+          if (!aiResult && process.env.OPENAI_API_KEY) {
+            aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
+          }
+
+          if (aiResult) {
+            responseSource = 'Web Search + Gemini Synthesis';
+            console.log(`[Real-Time Pipeline] gemini_synthesis=success`);
+          } else {
+            console.log(`[Real-Time Pipeline] gemini_synthesis=failure`);
+          }
+        }
+      }
+
+      console.log(`[Real-Time Pipeline] completed`);
     } else {
-      aiResult = await getSmartOfflineResponse(prompt, userMemories);
+      // PATH A: Normal non-real-time prompt routing
+      if (modelProvider === 'openai') {
+        aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
+        if (aiResult) responseSource = 'OpenAI';
+      } else if (modelProvider === 'copilot') {
+        aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
+        if (aiResult) responseSource = 'OpenRouter';
+      } else {
+        // Default / Gemini / Auto Route
+        aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, false, '');
+        if (aiResult) responseSource = 'Gemini Standard Generation';
+      }
+
+      // Auto routing fallback for non-real-time queries if primary provider returned null
+      if (!aiResult) {
+        if (process.env.OPENAI_API_KEY) {
+          aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
+          if (aiResult) responseSource = 'OpenAI Fallback';
+        } else if (process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY) {
+          aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
+          if (aiResult) responseSource = 'OpenRouter Fallback';
+        }
+      }
     }
-  }
 
-  // Guarantee Multi-Language Translation into user's chosen target language (Phase 14)
-  if (aiResult && targetLanguage && targetLanguage !== 'en' && targetLanguage !== 'auto') {
-    try {
-      aiResult = await translateText(aiResult, targetLanguage);
-    } catch (tErr) {
-      console.warn('[Multi-Language] Translation engine skipped:', tErr);
+    // PATH C / ERROR NOTICE HANDLING — DO NOT SILENTLY CALL getSmartOfflineResponse()
+    if (!aiResult) {
+      const newlySavedMemories = await memoryExtractionPromise;
+
+      if (isCurrentInfo) {
+        console.log(`[AI FALLBACK] getSmartOfflineResponse invoked: false (reason: "Current query search/grounding notice boundary")`);
+        console.log(`[AI FINAL] response source: Current Information Verification Notice`);
+        return {
+          response: `⚠️ **Current Information Verification Notice**:
+
+I couldn't verify reliable current information for this query right now. The live search results were insufficient or temporarily unavailable.
+
+To ensure accuracy and prevent providing outdated or fabricated answers, I cannot verify the current real-time status right now. Please check your \`GEMINI_API_KEY\` quota or try again in a few moments.`,
+          newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
+          userMemories
+        };
+      } else {
+        console.log(`[AI FALLBACK] getSmartOfflineResponse invoked: false (reason: "Normal query transparent Gemini API error boundary")`);
+        console.log(`[AI FINAL] response source: Gemini API Error Notice`);
+        return {
+          response: `⚠️ **AI Service Notice**:
+
+The AI model service (Google Gemini) could not complete this request at the moment.
+
+**Diagnostic Details**:
+- **Quota / Rate Limit**: The current \`GEMINI_API_KEY\` has reached its request limit (HTTP 429: Free tier 20 requests/day quota exceeded).
+- **Action Required**: Please check your API key quota in [Google AI Studio](https://aistudio.google.dev/) or wait a short moment for the rate limit window to reset.`,
+          newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
+          userMemories
+        };
+      }
     }
-  }
 
-  const newlySavedMemories = await memoryExtractionPromise;
+    console.log(`[AI FALLBACK] getSmartOfflineResponse invoked: false`);
+    console.log(`[AI FINAL] response source: ${responseSource}`);
 
-  return {
-    response: aiResult,
-    newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
-    userMemories
-  };
+    // Guarantee Multi-Language Translation into user's chosen target language
+    if (aiResult && targetLanguage && targetLanguage !== 'en' && targetLanguage !== 'auto') {
+      try {
+        aiResult = await translateText(aiResult, targetLanguage);
+      } catch (transErr) {
+        console.warn('[Translation Warning]:', transErr.message);
+      }
+    }
+
+    const newlySavedMemories = await memoryExtractionPromise;
+    return {
+      response: aiResult,
+      newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
+      userMemories
+    };
+  })();
 }
 
 /**
