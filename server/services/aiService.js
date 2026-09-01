@@ -404,7 +404,7 @@ async function callOpenAI(prompt, history, docTexts, imageParts, memoryContext =
  * Call OpenRouter / Copilot API with injected AI Memory context
  */
 async function callOpenRouter(prompt, history, docTexts, memoryContext = '') {
-  const apiKey = process.env.OPENROUTER_API_KEY || process.env.COPILOT_API_KEY || process.env.GROQ_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.COPILOT_API_KEY;
   if (!apiKey) return null;
 
   let systemPrompt = 'You are an expert AI coding and analysis assistant.';
@@ -430,11 +430,8 @@ async function callOpenRouter(prompt, history, docTexts, memoryContext = '') {
 
   messages.push({ role: 'user', content: userContent });
 
-  const endpoint = process.env.GROQ_API_KEY 
-    ? 'https://api.groq.com/openai/v1/chat/completions'
-    : 'https://openrouter.ai/api/v1/chat/completions';
-
-  const model = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'meta-llama/llama-3.3-70b-instruct:free';
+  const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+  const model = 'meta-llama/llama-3.3-70b-instruct:free';
 
   try {
     const res = await fetchWithTimeout(endpoint, {
@@ -453,6 +450,98 @@ async function callOpenRouter(prompt, history, docTexts, memoryContext = '') {
   } catch (err) {
     console.warn('[OpenRouter API] Request timed out or failed:', err.message);
   }
+  return null;
+}
+
+/**
+ * Dedicated Groq generation function using official OpenAI-compatible API
+ * Base URL: https://api.groq.com/openai/v1
+ * Supports model hierarchy starting with preferred model openai/gpt-oss-120b
+ * with automatic fallback to supported production Groq models (llama-3.3-70b-versatile, llama-3.1-8b-instant).
+ */
+async function callGroq(prompt, history, docTexts, imageParts, memoryContext = '', searchContext = '') {
+  const apiKey = process.env.GROQ_API_KEY;
+  const isKeyPresent = !!apiKey && apiKey.trim() !== '' && !apiKey.includes('your_groq_api_key_here');
+
+  if (!isKeyPresent) {
+    console.warn('[AI GROQ] GROQ_API_KEY is not configured or missing.');
+    return null;
+  }
+
+  // Preferred production Groq models to try in order
+  const groqModels = [
+    'openai/gpt-oss-120b',
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant'
+  ];
+
+  const currentDateStr = new Date().toISOString().split('T')[0];
+  let systemPrompt = 'You are an intelligent AI assistant skilled in deep technical reasoning, document analysis, and problem-solving.';
+
+  if (searchContext) {
+    systemPrompt = `System Instruction: You are an intelligent AI chatbot equipped with real-time news retrieval capabilities.\nToday's current date is ${currentDateStr}.\n\nSTRICT CURRENT NEWS RULES:\n1. You are answering a CURRENT INFORMATION / NEWS query.\n2. Use ONLY the retrieved sources for claims about current events.\n3. Do not use your pretrained memory to invent or update current facts.\n4. Do not treat TV channel overviews, media descriptions, or old Wikipedia articles as today's breaking news.\n5. Every factual claim must be backed by the retrieved search sources with dates where available.\n6. Format your answer as a clear, natural news summary. Never output generic templates.`;
+  }
+
+  if (memoryContext) {
+    systemPrompt += `\n\n${memoryContext}`;
+  }
+
+  const messages = [
+    { role: 'system', content: systemPrompt }
+  ];
+
+  if (Array.isArray(history)) {
+    history.forEach(item => {
+      if (item.question) messages.push({ role: 'user', content: item.question });
+      if (item.answer) messages.push({ role: 'assistant', content: item.answer });
+    });
+  }
+
+  let userContent = prompt;
+  if (searchContext) {
+    userContent = `--- REAL-TIME RETRIEVED NEWS & SEARCH RESULTS (Current Date: ${currentDateStr}) ---\n${searchContext}\n--- END RETRIEVED SEARCH RESULTS ---\n\nUser Question: "${prompt}"\n\nPlease answer the user question using ONLY the retrieved news sources above. Provide a structured, verified news response with dates and source links. If retrieved sources are insufficient or outdated, explicitly state that live current information could not be verified.`;
+  } else if (docTexts.length > 0) {
+    userContent = `${docTexts.join('\n\n')}\n\nUser Question: ${prompt || 'Please analyze the attached file(s).'}`;
+  }
+
+  messages.push({ role: 'user', content: userContent });
+
+  try {
+    const groqClient = new OpenAI({
+      apiKey,
+      baseURL: 'https://api.groq.com/openai/v1'
+    });
+
+    for (const modelName of groqModels) {
+      try {
+        console.log(`[AI GROQ] Requesting response from Groq (model: ${modelName})...`);
+        const response = await groqClient.chat.completions.create({
+          model: modelName,
+          messages,
+          temperature: 0.7
+        });
+
+        if (response && response.choices && response.choices[0]?.message?.content) {
+          console.log(`[AI GROQ RESULT] success: true, model: ${modelName}`);
+          return response.choices[0].message.content;
+        }
+      } catch (modelErr) {
+        const statusCode = modelErr.status || modelErr.statusCode;
+        const errType = statusCode === 429 ? 'RATE_LIMIT_429' :
+                        statusCode === 401 || statusCode === 403 ? 'AUTH_ERROR' :
+                        statusCode === 404 ? 'MODEL_UNAVAILABLE' : 'PROVIDER_ERROR';
+        console.warn(`[AI GROQ RESULT] model: ${modelName}, success: false, type: ${errType}, HTTP status: ${statusCode || 'ERR'}, message: "${modelErr.message ? modelErr.message.substring(0, 150) : 'Error'}"`);
+
+        // If authentication error, do not retry other models with invalid key
+        if (errType === 'AUTH_ERROR') {
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[AI GROQ] Failure: ${err.message}`);
+  }
+
   return null;
 }
 
@@ -1118,19 +1207,29 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
             `Source [${i + 1}] (${r.source} | Date: ${r.date || 'Recent'}): "${r.title}" (${r.url})\nSnippet: ${r.snippet}`
           ).join('\n\n');
 
-          // Call Gemini Flash passing retrieved live search results as context
+          // Provider Fallback Chain for Real-Time Search Context Synthesis: Gemini -> OpenAI -> Groq
+          console.log(`[Real-Time Pipeline] Synthesizing search results with primary provider: Gemini...`);
           aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, false, formattedContext);
 
           if (aiResult) {
             responseSource = 'Web Search + Gemini Synthesis';
             console.log(`[AI] Gemini Web Search Synthesis -> SUCCESS`);
           } else {
-            console.warn(`[AI] Gemini -> FAILURE / 429 Quota Exceeded`);
+            console.warn(`[AI] Gemini Web Search Synthesis -> FAILURE / Quota Exceeded`);
             if (process.env.OPENAI_API_KEY) {
-              console.log(`[AI] Falling back to OpenAI`);
+              console.log(`[AI] Real-time fallback to OpenAI synthesis...`);
               aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext, formattedContext);
               if (aiResult) {
                 responseSource = 'Web Search + OpenAI Synthesis';
+                console.log(`[AI] OpenAI Web Search Synthesis -> SUCCESS`);
+              }
+            }
+            if (!aiResult && process.env.GROQ_API_KEY) {
+              console.log(`[AI] Real-time fallback to Groq synthesis...`);
+              aiResult = await callGroq(prompt, history, docTexts, imageParts, memoryContext, formattedContext);
+              if (aiResult) {
+                responseSource = 'Web Search + Groq Synthesis';
+                console.log(`[AI] Groq Web Search Synthesis -> SUCCESS`);
               }
             }
           }
@@ -1140,14 +1239,18 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
       console.log(`[Real-Time Pipeline] completed`);
     } else {
       // PATH A: Normal non-real-time prompt routing
-      if (modelProvider === 'openai') {
+      // Explicit provider routing or default auto-fallback chain
+      if (modelProvider === 'groq') {
+        aiResult = await callGroq(prompt, history, docTexts, imageParts, memoryContext);
+        if (aiResult) responseSource = 'Groq Standard Generation';
+      } else if (modelProvider === 'openai') {
         aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
-        if (aiResult) responseSource = 'OpenAI';
+        if (aiResult) responseSource = 'OpenAI Standard Generation';
       } else if (modelProvider === 'copilot') {
         aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
-        if (aiResult) responseSource = 'OpenRouter';
+        if (aiResult) responseSource = 'OpenRouter Standard Generation';
       } else {
-        // Default / Gemini / Auto Route
+        // Default / Gemini / Auto Route (Primary Provider)
         aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, false, '');
         if (aiResult) {
           responseSource = 'Gemini Standard Generation';
@@ -1157,18 +1260,31 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
         }
       }
 
-      // Auto routing fallback for non-real-time queries if primary provider returned null
+      // Intelligent Provider Fallback Chain for Non-Real-Time Queries:
+      // Gemini (Primary) → OpenAI (Secondary) → Groq (Tertiary)
       if (!aiResult) {
-        if (process.env.OPENAI_API_KEY) {
-          console.log(`[AI] Falling back to OpenAI`);
+        if (modelProvider !== 'openai' && process.env.OPENAI_API_KEY) {
+          console.log(`[AI Fallback Chain] Secondary Fallback -> OpenAI`);
           aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
           if (aiResult) {
             responseSource = 'OpenAI (Secondary Provider Fallback)';
           }
-        } else if (process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY) {
-          console.log(`[AI] Falling back to OpenRouter`);
+        }
+
+        if (!aiResult && modelProvider !== 'groq' && process.env.GROQ_API_KEY) {
+          console.log(`[AI Fallback Chain] Tertiary Fallback -> Groq`);
+          aiResult = await callGroq(prompt, history, docTexts, imageParts, memoryContext);
+          if (aiResult) {
+            responseSource = 'Groq (Tertiary Provider Fallback)';
+          }
+        }
+
+        if (!aiResult && (process.env.OPENROUTER_API_KEY || process.env.COPILOT_API_KEY)) {
+          console.log(`[AI Fallback Chain] Auxiliary Fallback -> OpenRouter`);
           aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
-          if (aiResult) responseSource = 'OpenRouter Fallback';
+          if (aiResult) {
+            responseSource = 'OpenRouter Fallback';
+          }
         }
       }
     }
@@ -1195,13 +1311,14 @@ To ensure accuracy and prevent providing outdated or fabricated answers, I canno
         return {
           response: `⚠️ **AI Service Notice**:
 
-Both the primary AI provider (**Google Gemini**) and secondary AI provider (**OpenAI**) were unable to complete this request at the moment.
+All configured AI providers (**Google Gemini**, **OpenAI**, and **Groq**) were unable to complete this request at the moment.
 
 **Diagnostic Details**:
 - **Google Gemini**: Request limit / HTTP 429 (Quota exceeded or temporary failure).
 - **OpenAI**: Service unavailable or API key quota limit reached.
+- **Groq**: Rate limit, quota exceeded, or service unavailable.
 
-**Action Required**: Please check your API key quotas in [Google AI Studio](https://aistudio.google.dev/) or [OpenAI Platform](https://platform.openai.com/) or try again in a short moment.`,
+**Action Required**: Please check your API key quotas in [Google AI Studio](https://aistudio.google.dev/), [OpenAI Platform](https://platform.openai.com/), or [Groq Console](https://console.groq.com/) or try again in a short moment.`,
           newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
           userMemories
         };
@@ -1388,17 +1505,23 @@ Format clearly with distinct markdown section headers.`;
   let result = null;
   if (modelProvider === 'openai') {
     result = await callOpenAI(prompt, [], [], [], '');
+  } else if (modelProvider === 'groq') {
+    result = await callGroq(prompt, [], [], [], '');
   } else if (modelProvider === 'copilot') {
     result = await callOpenRouter(prompt, [], [], '');
   } else if (modelProvider === 'gemini') {
     result = await callGemini(prompt, [], [], [], '');
   }
 
+  // Multi-tier fallback chain for Code Assistant: Gemini -> OpenAI -> Groq -> OpenRouter
   if (!result) {
     result = await callGemini(prompt, [], [], [], '');
   }
   if (!result) {
     result = await callOpenAI(prompt, [], [], [], '');
+  }
+  if (!result) {
+    result = await callGroq(prompt, [], [], [], '');
   }
   if (!result) {
     result = await callOpenRouter(prompt, [], [], '');
