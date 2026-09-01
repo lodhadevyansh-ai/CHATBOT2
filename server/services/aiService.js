@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import { executeToolIfMatched } from './toolsService.js';
 import { parseAttachment, getSmartOfflineDocumentResponse } from './fileParserService.js';
 import { extractMemoriesFromPrompt, getUserMemories, formatMemoriesForContext } from './memoryService.js';
@@ -326,13 +327,24 @@ function fetchWithTimeout(url, options, timeoutMs = 6000) {
 }
 
 /**
- * Call OpenAI API (ChatGPT) with injected AI Memory context
+ * Call OpenAI API (ChatGPT) with injected AI Memory context & optional real-time search context
  */
-async function callOpenAI(prompt, history, docTexts, imageParts, memoryContext = '') {
+async function callOpenAI(prompt, history, docTexts, imageParts, memoryContext = '', searchContext = '') {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  const isKeyPresent = !!apiKey && apiKey.trim() !== '' && !apiKey.includes('your_openai_api_key_here');
 
+  if (!isKeyPresent) {
+    console.warn('[AI] OPENAI_API_KEY is not configured or missing.');
+    return null;
+  }
+
+  const currentDateStr = new Date().toISOString().split('T')[0];
   let systemPrompt = 'You are an intelligent AI assistant skilled in deep technical reasoning, document analysis, and problem-solving.';
+
+  if (searchContext) {
+    systemPrompt = `System Instruction: You are an intelligent AI chatbot equipped with real-time news retrieval capabilities.\nToday's current date is ${currentDateStr}.\n\nSTRICT CURRENT NEWS RULES:\n1. You are answering a CURRENT INFORMATION / NEWS query.\n2. Use ONLY the retrieved sources for claims about current events.\n3. Do not use your pretrained memory to invent or update current facts.\n4. Do not treat TV channel overviews, media descriptions, or old Wikipedia articles as today's breaking news.\n5. Every factual claim must be backed by the retrieved search sources with dates where available.\n6. Format your answer as a clear, natural news summary. Never output generic templates.`;
+  }
+
   if (memoryContext) {
     systemPrompt += `\n\n${memoryContext}`;
   }
@@ -349,7 +361,9 @@ async function callOpenAI(prompt, history, docTexts, imageParts, memoryContext =
   }
 
   let userContent = prompt;
-  if (docTexts.length > 0) {
+  if (searchContext) {
+    userContent = `--- REAL-TIME RETRIEVED NEWS & SEARCH RESULTS (Current Date: ${currentDateStr}) ---\n${searchContext}\n--- END RETRIEVED SEARCH RESULTS ---\n\nUser Question: "${prompt}"\n\nPlease answer the user question using ONLY the retrieved news sources above. Provide a structured, verified news response with dates and source links. If retrieved sources are insufficient or outdated, explicitly state that live current information could not be verified.`;
+  } else if (docTexts.length > 0) {
     userContent = `${docTexts.join('\n\n')}\n\nUser Question: ${prompt || 'Please analyze the attached file(s).'}`;
   }
 
@@ -368,25 +382,20 @@ async function callOpenAI(prompt, history, docTexts, imageParts, memoryContext =
   }
 
   try {
-    const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages,
-        temperature: 0.7
-      })
-    }, 6000);
+    const openai = new OpenAI({ apiKey });
+    console.log('[AI] Requesting response from OpenAI (model: gpt-4o-mini)...');
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      temperature: 0.7
+    });
 
-    const data = await res.json();
-    if (data.choices && data.choices[0]?.message?.content) {
-      return data.choices[0].message.content;
+    if (response && response.choices && response.choices[0]?.message?.content) {
+      console.log('[AI] OpenAI -> SUCCESS');
+      return response.choices[0].message.content;
     }
   } catch (err) {
-    console.warn('[OpenAI API] Request timed out or failed:', err.message);
+    console.warn(`[AI] OpenAI -> FAILURE: ${err.message}`);
   }
   return null;
 }
@@ -1089,15 +1098,15 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
         aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, true, '');
         if (aiResult) {
           responseSource = 'Search Grounding (Native Gemini)';
-          console.log(`[Real-Time Pipeline] native_grounding=success`);
+          console.log(`[AI] Gemini Search Grounding -> SUCCESS`);
         } else {
-          console.log(`[Real-Time Pipeline] native_grounding=failure`);
+          console.warn(`[AI] Gemini Search Grounding -> FAILURE / 429 Quota Exceeded`);
         }
       }
 
       // Step 2: Fallback to Multi-Source Web Search Engine if Native Search Grounding is unavailable
       if (!aiResult) {
-        console.log(`[Real-Time Pipeline] fallback_search=started`);
+        console.log(`[Real-Time Pipeline] Initiating multi-source web search engine fallback...`);
         const searchQuery = generateNewsSearchQuery(prompt, history);
         console.log(`[Real-Time Pipeline] generated_news_search_query="${searchQuery}"`);
 
@@ -1109,18 +1118,21 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
             `Source [${i + 1}] (${r.source} | Date: ${r.date || 'Recent'}): "${r.title}" (${r.url})\nSnippet: ${r.snippet}`
           ).join('\n\n');
 
-          // Call Gemini 3.6 Flash passing retrieved live search results as context
+          // Call Gemini Flash passing retrieved live search results as context
           aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, false, formattedContext);
-
-          if (!aiResult && process.env.OPENAI_API_KEY) {
-            aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
-          }
 
           if (aiResult) {
             responseSource = 'Web Search + Gemini Synthesis';
-            console.log(`[Real-Time Pipeline] gemini_synthesis=success`);
+            console.log(`[AI] Gemini Web Search Synthesis -> SUCCESS`);
           } else {
-            console.log(`[Real-Time Pipeline] gemini_synthesis=failure`);
+            console.warn(`[AI] Gemini -> FAILURE / 429 Quota Exceeded`);
+            if (process.env.OPENAI_API_KEY) {
+              console.log(`[AI] Falling back to OpenAI`);
+              aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext, formattedContext);
+              if (aiResult) {
+                responseSource = 'Web Search + OpenAI Synthesis';
+              }
+            }
           }
         }
       }
@@ -1137,15 +1149,24 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
       } else {
         // Default / Gemini / Auto Route
         aiResult = await callGemini(prompt, history, docTexts, imageParts, memoryContext, false, '');
-        if (aiResult) responseSource = 'Gemini Standard Generation';
+        if (aiResult) {
+          responseSource = 'Gemini Standard Generation';
+          console.log(`[AI] Gemini -> SUCCESS`);
+        } else {
+          console.warn(`[AI] Gemini -> FAILURE / 429 Quota Exceeded`);
+        }
       }
 
       // Auto routing fallback for non-real-time queries if primary provider returned null
       if (!aiResult) {
         if (process.env.OPENAI_API_KEY) {
+          console.log(`[AI] Falling back to OpenAI`);
           aiResult = await callOpenAI(prompt, history, docTexts, imageParts, memoryContext);
-          if (aiResult) responseSource = 'OpenAI Fallback';
+          if (aiResult) {
+            responseSource = 'OpenAI (Secondary Provider Fallback)';
+          }
         } else if (process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY) {
+          console.log(`[AI] Falling back to OpenRouter`);
           aiResult = await callOpenRouter(prompt, history, docTexts, memoryContext);
           if (aiResult) responseSource = 'OpenRouter Fallback';
         }
@@ -1162,23 +1183,25 @@ export function generateAIResponse(prompt, history = [], attachments = [], model
         return {
           response: `⚠️ **Current Information Verification Notice**:
 
-I couldn't verify reliable current information for this query right now. The live search results were insufficient or temporarily unavailable.
+I couldn't verify reliable current information for this query right now. The live search results were insufficient or temporarily unavailable, and the AI providers were unable to process the request.
 
-To ensure accuracy and prevent providing outdated or fabricated answers, I cannot verify the current real-time status right now. Please check your \`GEMINI_API_KEY\` quota or try again in a few moments.`,
+To ensure accuracy and prevent providing outdated or fabricated answers, I cannot verify the current real-time status right now. Please check your API provider quotas or try again in a few moments.`,
           newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
           userMemories
         };
       } else {
-        console.log(`[AI FALLBACK] getSmartOfflineResponse invoked: false (reason: "Normal query transparent Gemini API error boundary")`);
-        console.log(`[AI FINAL] response source: Gemini API Error Notice`);
+        console.log(`[AI FALLBACK] getSmartOfflineResponse invoked: false (reason: "Normal query transparent AI Service error boundary")`);
+        console.log(`[AI FINAL] response source: AI Service Error Notice`);
         return {
           response: `⚠️ **AI Service Notice**:
 
-The AI model service (Google Gemini) could not complete this request at the moment.
+Both the primary AI provider (**Google Gemini**) and secondary AI provider (**OpenAI**) were unable to complete this request at the moment.
 
 **Diagnostic Details**:
-- **Quota / Rate Limit**: The current \`GEMINI_API_KEY\` has reached its request limit (HTTP 429: Free tier 20 requests/day quota exceeded).
-- **Action Required**: Please check your API key quota in [Google AI Studio](https://aistudio.google.dev/) or wait a short moment for the rate limit window to reset.`,
+- **Google Gemini**: Request limit / HTTP 429 (Quota exceeded or temporary failure).
+- **OpenAI**: Service unavailable or API key quota limit reached.
+
+**Action Required**: Please check your API key quotas in [Google AI Studio](https://aistudio.google.dev/) or [OpenAI Platform](https://platform.openai.com/) or try again in a short moment.`,
           newMemories: Array.isArray(newlySavedMemories) ? newlySavedMemories : [],
           userMemories
         };
